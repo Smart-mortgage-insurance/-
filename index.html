@@ -368,7 +368,7 @@
   <header>
     <div class="eyebrow">כלי אישי · פועל בדפדפן שלך בלבד</div>
     <h1>תמלול וליטוש</h1>
-    <p>העלאת קבצי שמע (אחד או כמה מקטעים), תמלול אוטומטי, וליטוש הטקסט — כולל תיקון מונחים ארמיים והתחשבות בהגייה אשכנזית.</p>
+    <p>העלאת קבצי שמע (אחד או כמה מקטעים), ותמלול אוטומטי. את הליטוש (תיקון מונחים ארמיים, פיסוק, הגייה אשכנזית) עושים בשיחה עם קלוד — הכלי מכין לך את הטקסט מוכן להדבקה.</p>
   </header>
 
   <div class="card">
@@ -376,15 +376,16 @@
     <div class="field">
       <label for="openaiKey">מפתח OpenAI (לתמלול השמע)</label>
       <input type="password" id="openaiKey" placeholder="sk-...">
-      <div class="hint">נרשמים ב-<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>. המפתח נשלח רק ל-OpenAI, לעולם לא לשום שרת אחר.</div>
+      <div class="hint">נרשמים ב-<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>. המפתח נשלח רק ל-Worker שלך ומשם ל-OpenAI, לעולם לא לשום מקום אחר.</div>
       <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;font-weight:400;color:var(--ink);cursor:pointer;">
         <input type="checkbox" id="rememberKey" style="width:auto;margin:0;">
         זכור את המפתח במכשיר הזה (לא מומלץ במכשיר משותף)
       </label>
     </div>
     <div class="field">
-      <label for="anthropicNote">ליטוש הטקסט</label>
-      <div class="hint" id="anthropicNote">שלב הליטוש מתבצע דרך קלוד באופן אוטומטי, ואינו דורש מפתח נוסף ממך.</div>
+      <label for="workerUrl">כתובת ה-Worker (המתווך)</label>
+      <input type="text" id="workerUrl" placeholder="https://whisper-proxy.your-name.workers.dev">
+      <div class="hint">הכתובת שקיבלת מ-Cloudflare Workers אחרי הפריסה. חובה כדי שהתמלול יעבוד.</div>
     </div>
   </div>
 
@@ -421,7 +422,7 @@
       </div>
     </div>
 
-    <button class="go" id="goBtn" disabled>תמלל ולטש</button>
+    <button class="go" id="goBtn" disabled>תמלל</button>
     <div class="status" id="statusBox"><div class="spinner"></div><span id="statusText"></span></div>
     <div class="progress-outer" id="progressOuter"><div class="progress-inner" id="progressInner"></div></div>
     <div class="error" id="errorBox"></div>
@@ -430,24 +431,22 @@
   <div class="daf" id="dafBox">
     <div class="daf-inner">
       <div class="daf-main">
-        <div class="label">טקסט מלוטש</div>
-        <div class="text" id="polishedText"></div>
-      </div>
-      <div class="daf-margin">
-        <div class="label">תמלול גולמי (מקור)</div>
+        <div class="label">תמלול גולמי</div>
         <div class="text" id="rawText"></div>
       </div>
     </div>
     <div class="toolbar">
-      <button id="copyPolished">העתק טקסט מלוטש</button>
-      <button id="downloadPolished">הורד טקסט מלוטש (TXT)</button>
-      <button id="copyRaw">העתק תמלול גולמי</button>
-      <button id="downloadRaw">הורד תמלול גולמי (TXT)</button>
+      <button id="copyRaw">העתק תמלול</button>
+      <button id="downloadRaw">הורד כקובץ TXT</button>
+      <button id="copyForClaude" style="background:var(--navy);color:#fff;border-color:var(--navy);">העתק לליטוש בקלוד</button>
+    </div>
+    <div class="hint" style="margin-top:12px;">
+      לחיצה על "העתק לליטוש בקלוד" מעתיקה את התמלול יחד עם הנחיה מוכנה. פתח שיחה עם קלוד (כאן, ב-claude.ai), הדבק, ותקבל טקסט מלוטש עם תיקון מונחים ארמיים ופיסוק.
     </div>
   </div>
 
   <div class="note">
-    כל מקטע מלוטש בנפרד מיד אחרי תמלולו, כדי שאורך התשובה לא יגרום לחיתוך טקסט. אם קטע בודד ארוך במיוחד (יותר מ-20 דקות בקירוב), הליטוש שלו עלול עדיין להיחתך.
+    קובץ בודד מוגבל ל-25MB אצל OpenAI. להקלטות ארוכות, חלק מראש למקטעים קטנים יותר והעלה את כולם יחד — הכלי יעבד לפי הסדר וישמור תוצאות חלקיות גם אם קטע כלשהו נכשל.
   </div>
 
 </div>
@@ -466,21 +465,23 @@ const progressOuter = document.getElementById('progressOuter');
 const progressInner = document.getElementById('progressInner');
 const errorBox = document.getElementById('errorBox');
 const dafBox = document.getElementById('dafBox');
-const polishedTextEl = document.getElementById('polishedText');
 const rawTextEl = document.getElementById('rawText');
 const openaiKeyInput = document.getElementById('openaiKey');
 const rememberKeyBox = document.getElementById('rememberKey');
+const workerUrlInput = document.getElementById('workerUrl');
 const langSelect = document.getElementById('langSelect');
 const modelSelect = document.getElementById('modelSelect');
 
-// Load remembered key, if any, on page load
-(function loadRememberedKey(){
+// Load remembered key/worker url, if any, on page load
+(function loadRemembered(){
   try {
-    const saved = localStorage.getItem('transcriber_openai_key');
-    if (saved) {
-      openaiKeyInput.value = saved;
+    const savedKey = localStorage.getItem('transcriber_openai_key');
+    if (savedKey) {
+      openaiKeyInput.value = savedKey;
       rememberKeyBox.checked = true;
     }
+    const savedUrl = localStorage.getItem('transcriber_worker_url');
+    if (savedUrl) workerUrlInput.value = savedUrl;
   } catch (e) {
     // localStorage unavailable (e.g. private browsing) — silently ignore
   }
@@ -497,8 +498,17 @@ function syncKeyStorage(){
     // ignore storage errors
   }
 }
+function syncWorkerUrlStorage(){
+  try {
+    const v = workerUrlInput.value.trim();
+    if (v) localStorage.setItem('transcriber_worker_url', v);
+  } catch (e) {
+    // ignore storage errors
+  }
+}
 openaiKeyInput.addEventListener('input', syncKeyStorage);
 rememberKeyBox.addEventListener('change', syncKeyStorage);
+workerUrlInput.addEventListener('input', syncWorkerUrlStorage);
 
 dropzone.addEventListener('click', () => fileInput.click());
 dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag'); });
@@ -586,9 +596,10 @@ function removeFile(i){
 }
 
 function updateGoState(){
-  goBtn.disabled = !(files.length > 0 && openaiKeyInput.value.trim());
+  goBtn.disabled = !(files.length > 0 && openaiKeyInput.value.trim() && workerUrlInput.value.trim());
 }
 openaiKeyInput.addEventListener('input', updateGoState);
+workerUrlInput.addEventListener('input', updateGoState);
 
 function showError(msg){
   errorBox.textContent = msg;
@@ -612,14 +623,14 @@ goBtn.addEventListener('click', async () => {
   hideError();
   dafBox.classList.remove('show');
   const apiKey = openaiKeyInput.value.trim();
-  if (!files.length || !apiKey) return;
+  const workerUrl = workerUrlInput.value.trim();
+  if (!files.length || !apiKey || !workerUrl) return;
 
   goBtn.disabled = true;
   const lang = langSelect.value;
   const model = modelSelect.value;
 
   const rawSegments = [];
-  const polishedSegments = [];
 
   try {
     for (let i = 0; i < files.length; i++) {
@@ -633,7 +644,7 @@ goBtn.addEventListener('click', async () => {
       setStatus('מתמלל קטע ' + n + ' מתוך ' + total + ' (' + entry.file.name + ')...');
       let raw;
       try {
-        raw = await transcribeAudio(entry.file, apiKey, lang, model);
+        raw = await transcribeAudio(entry.file, apiKey, lang, model, workerUrl);
       } catch (err) {
         throw new Error('קטע ' + n + ' (' + entry.file.name + '): ' + err.message);
       }
@@ -642,19 +653,10 @@ goBtn.addEventListener('click', async () => {
       }
       rawSegments.push({ n, name: entry.file.name, text: raw.trim() });
 
-      setStatus('מלטש קטע ' + n + ' מתוך ' + total + '...');
-      let polished;
-      try {
-        polished = await polishTranscript(raw.trim());
-      } catch (err) {
-        throw new Error('ליטוש קטע ' + n + ' (' + entry.file.name + '): ' + err.message);
-      }
-      polishedSegments.push({ n, name: entry.file.name, text: polished.trim() });
-
       highlightRow(entry.id, 'done');
 
       // render progressively so partial results are visible even if a later segment fails
-      renderResults(rawSegments, polishedSegments);
+      renderResults(rawSegments);
       dafBox.classList.add('show');
     }
 
@@ -664,7 +666,7 @@ goBtn.addEventListener('click', async () => {
 
   } catch (err) {
     console.error(err);
-    showError('שגיאה: ' + (err.message || 'משהו השתבש. בדוק את המפתח, את החיבור לרשת, ונסה שוב.') +
+    showError('שגיאה: ' + (err.message || 'משהו השתבש. בדוק את המפתח, את כתובת ה-Worker, ונסה שוב.') +
       (rawSegments.length ? ' (הקטעים שכבר עובדו בהצלחה מוצגים למטה.)' : ''));
     setStatus('');
     setProgress(null);
@@ -680,21 +682,8 @@ function highlightRow(id, cls){
   row.classList.add(cls);
 }
 
-function renderResults(rawSegments, polishedSegments){
+function renderResults(rawSegments){
   const multi = rawSegments.length > 1;
-
-  polishedTextEl.innerHTML = '';
-  polishedSegments.forEach(seg => {
-    if (multi) {
-      const mark = document.createElement('span');
-      mark.className = 'segmark';
-      mark.textContent = 'קטע ' + seg.n + ' — ' + seg.name;
-      polishedTextEl.appendChild(mark);
-    }
-    const p = document.createElement('span');
-    p.textContent = seg.text + '\n';
-    polishedTextEl.appendChild(p);
-  });
 
   rawTextEl.innerHTML = '';
   rawSegments.forEach(seg => {
@@ -710,14 +699,14 @@ function renderResults(rawSegments, polishedSegments){
   });
 }
 
-async function transcribeAudio(file, apiKey, lang, model){
+async function transcribeAudio(file, apiKey, lang, model, workerUrl){
   const formData = new FormData();
   formData.append('file', file);
   formData.append('model', model);
   if (lang) formData.append('language', lang);
   formData.append('response_format', 'text');
 
-  const resp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const resp = await fetch(workerUrl, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + apiKey },
     body: formData
@@ -736,44 +725,6 @@ async function transcribeAudio(file, apiKey, lang, model){
   return await resp.text();
 }
 
-async function polishTranscript(rawText){
-  const systemPrompt = `אתה עוזר לליטוש תמלולי דיבור בעברית. הטקסט שתקבל הוא תמלול גולמי ואוטומטי של הקלטת דיבור, שעשוי לכלול:
-- מונחים בארמית (למשל מהתלמוד, מדרשים, פוסקים) שתומללו בצורה שגויה
-- מילים שנאמרו בהגייה אשכנזית ותומללו לפי הגייה ספרדית/מודרנית, מה שעלול לגרום לשגיאות
-- חוסר פיסוק, חזרות, וגמגומים טיפוסיים לדיבור חופשי
-
-המשימה שלך:
-1. תקן שגיאות תמלול ברורות, במיוחד במונחים ארמיים ותלמודיים נפוצים
-2. הוסף פיסוק וחלוקה לפסקאות במקומות טבעיים
-3. הסר גמגומים וחזרות מיותרות תוך שמירה על התוכן והמשמעות המקורית
-4. אם יש מילה או קטע שאינך בטוח בפירושו, סמן אותו כך: [?]
-5. אל תוסיף תוכן שלא נאמר, ואל תסכם — רק נקה וארגן את מה שנאמר בפועל
-
-זהו קטע אחד מתוך הקלטה ארוכה יותר שמעובדת בנפרד קטע-קטע. עבד רק את הטקסט שלפניך.
-
-החזר אך ורק את הטקסט המתוקן, ללא הקדמות, ללא הערות, וללא markdown.`;
-
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-6",
-      max_tokens: 1000,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: rawText }
-      ]
-    })
-  });
-
-  if (!response.ok) {
-    throw new Error('שירות הליטוש החזיר שגיאה (' + response.status + ')');
-  }
-  const data = await response.json();
-  const textBlock = data.content.find(b => b.type === 'text');
-  return textBlock ? textBlock.text : rawText;
-}
-
 function downloadText(text, filename){
   const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
   const url = URL.createObjectURL(blob);
@@ -786,17 +737,15 @@ function downloadText(text, filename){
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('copyPolished').addEventListener('click', () => {
-  navigator.clipboard.writeText(polishedTextEl.textContent);
-});
 document.getElementById('copyRaw').addEventListener('click', () => {
   navigator.clipboard.writeText(rawTextEl.textContent);
 });
-document.getElementById('downloadPolished').addEventListener('click', () => {
-  downloadText(polishedTextEl.textContent, 'טקסט-מלוטש.txt');
-});
 document.getElementById('downloadRaw').addEventListener('click', () => {
   downloadText(rawTextEl.textContent, 'תמלול-גולמי.txt');
+});
+document.getElementById('copyForClaude').addEventListener('click', () => {
+  const instruction = 'זהו תמלול גולמי ואוטומטי של הקלטת דיבור בעברית, שעשוי לכלול מונחים בארמית (מהתלמוד, מדרשים, פוסקים) שתומללו בצורה שגויה, ומילים שנאמרו בהגייה אשכנזית ותומללו לפי הגייה מודרנית/ספרדית. אנא: 1) תקן שגיאות תמלול במונחים ארמיים ותלמודיים נפוצים. 2) הוסף פיסוק וחלוקה לפסקאות. 3) הסר גמגומים וחזרות מיותרות תוך שמירה על התוכן. 4) סמן קטעים לא ברורים ב-[?]. 5) אל תוסיף תוכן שלא נאמר ואל תסכם.\n\nהטקסט:\n\n';
+  navigator.clipboard.writeText(instruction + rawTextEl.textContent);
 });
 </script>
 </body>
